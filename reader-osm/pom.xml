@@ -5,7 +5,7 @@
 
     <groupId>com.graphhopper</groupId>
     <artifactId>graphhopper-reader-osm</artifactId>
-    <version>0.8-SNAPSHOT</version>
+    <version>0.8-SNAPSHOT-GRAB</version>
     <packaging>jar</packaging>
     <name>GraphHopper Reader for OpenStreetMap Data</name>
 
@@ -19,7 +19,7 @@
         <dependency>
             <groupId>com.graphhopper</groupId>
             <artifactId>graphhopper-core</artifactId>
-            <version>${project.parent.version}</version>
+            <version>0.8-SNAPSHOT-GRAB</version>
         </dependency>
         
         <dependency>

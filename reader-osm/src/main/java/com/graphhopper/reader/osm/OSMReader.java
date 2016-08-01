@@ -1,14 +1,14 @@
 /*
  *  Licensed to GraphHopper GmbH under one or more contributor
- *  license agreements. See the NOTICE file distributed with this work for 
+ *  license agreements. See the NOTICE file distributed with this work for
  *  additional information regarding copyright ownership.
- * 
- *  GraphHopper GmbH licenses this file to you under the Apache License, 
- *  Version 2.0 (the "License"); you may not use this file except in 
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the "License"); you may not use this file except in
  *  compliance with the License. You may obtain a copy of the License at
- * 
+ *
  *       http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  *  Unless required by applicable law or agreed to in writing, software
  *  distributed under the License is distributed on an "AS IS" BASIS,
  *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,43 +17,39 @@
  */
 package com.graphhopper.reader.osm;
 
-import com.graphhopper.reader.ReaderRelation;
-import com.graphhopper.reader.ReaderWay;
-import com.graphhopper.reader.ReaderNode;
-import com.graphhopper.reader.ReaderElement;
-import static com.graphhopper.util.Helper.nf;
-
+import com.graphhopper.coll.GHLongIntBTree;
+import com.graphhopper.coll.LongIntMap;
+import com.graphhopper.reader.*;
+import com.graphhopper.reader.dem.ElevationProvider;
+import com.graphhopper.reader.osm.OSMTurnRelation.TurnCostTableEntry;
+import com.graphhopper.routing.util.DefaultEdgeFilter;
+import com.graphhopper.routing.util.EncodingManager;
+import com.graphhopper.routing.util.FlagEncoder;
+import com.graphhopper.routing.util.TurnWeighting;
+import com.graphhopper.storage.*;
+import com.graphhopper.util.*;
+import com.graphhopper.util.shapes.GHPoint;
 import gnu.trove.list.TLongList;
 import gnu.trove.list.array.TLongArrayList;
 import gnu.trove.map.TIntLongMap;
 import gnu.trove.map.TLongLongMap;
+import gnu.trove.map.TLongObjectMap;
 import gnu.trove.map.hash.TIntLongHashMap;
 import gnu.trove.map.hash.TLongLongHashMap;
+import gnu.trove.map.hash.TLongObjectHashMap;
 import gnu.trove.set.TLongSet;
 import gnu.trove.set.hash.TLongHashSet;
-
-import java.io.File;
-import java.io.IOException;
-
-import javax.xml.stream.XMLStreamException;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.graphhopper.coll.GHLongIntBTree;
-import com.graphhopper.coll.LongIntMap;
-import com.graphhopper.reader.DataReader;
-import com.graphhopper.reader.osm.OSMTurnRelation.TurnCostTableEntry;
-import com.graphhopper.reader.PillarInfo;
-import com.graphhopper.reader.dem.ElevationProvider;
-import com.graphhopper.routing.util.*;
-import com.graphhopper.storage.*;
-import com.graphhopper.util.*;
-import com.graphhopper.util.shapes.GHPoint;
-import gnu.trove.map.TLongObjectMap;
-import gnu.trove.map.hash.TLongObjectHashMap;
-
+import javax.xml.stream.XMLStreamException;
+import java.io.File;
+import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static com.graphhopper.util.Helper.nf;
 
 /**
  * This class parses an OSM xml or pbf file and creates a graph from it. It does so in a two phase
@@ -126,6 +122,11 @@ public class OSMReader implements DataReader
     private final Map<FlagEncoder, EdgeExplorer> outExplorerMap = new HashMap<FlagEncoder, EdgeExplorer>();
     private final Map<FlagEncoder, EdgeExplorer> inExplorerMap = new HashMap<FlagEncoder, EdgeExplorer>();
 
+    private Map<Integer, Long> internalNodeToOsmNodeIdMap = new HashMap<>();
+    private Map<Long,Integer> osmWayIdToInternalIdMap = new ConcurrentHashMap<>();
+    private AtomicInteger nexInternalWayId = new AtomicInteger(0);
+
+
     public OSMReader( GraphHopperStorage ghStorage )
     {
         this.ghStorage = ghStorage;
@@ -152,6 +153,7 @@ public class OSMReader implements DataReader
 
         StopWatch sw1 = new StopWatch().start();
         preProcess(osmFile);
+        System.out.println("------------------osmWayIdToInternalIdMap size:" + osmWayIdToInternalIdMap.size() +"------------------");
         sw1.stop();
 
         StopWatch sw2 = new StopWatch().start();
@@ -184,6 +186,11 @@ public class OSMReader implements DataReader
                     boolean valid = filterWay(way);
                     if (valid)
                     {
+                        Integer internalId = osmWayIdToInternalIdMap.get(way.getId());
+                        if (internalId == null) {
+                            osmWayIdToInternalIdMap.put(way.getId(),nexInternalWayId.getAndIncrement());
+                        }
+
                         TLongList wayNodes = way.getNodes();
                         int s = wayNodes.size();
                         for (int index = 0; index < s; index++)
@@ -614,15 +621,18 @@ public class OSMReader implements DataReader
         double lat = node.getLat();
         double lon = node.getLon();
         double ele = getElevation(node);
+        int id = EMPTY;
         if (nodeType == TOWER_NODE)
         {
-            addTowerNode(node.getId(), lat, lon, ele);
+            id = addTowerNode(node.getId(), lat, lon, ele);
         } else if (nodeType == PILLAR_NODE)
         {
             pillarInfo.setNode(nextPillarId, lat, lon, ele);
-            getNodeMap().put(node.getId(), nextPillarId + 3);
+            id = nextPillarId + 3;
+            getNodeMap().put(node.getId(), id);
             nextPillarId++;
         }
+        internalNodeToOsmNodeIdMap.put(id,node.getId());
         return true;
     }
 
@@ -687,7 +697,7 @@ public class OSMReader implements DataReader
     /**
      * This method creates from an OSM way (via the osm ids) one or more edges in the graph.
      */
-    Collection<EdgeIteratorState> addOSMWay( final TLongList osmNodeIds, final long flags, final long wayOsmId )
+    protected Collection<EdgeIteratorState> addOSMWay( final TLongList osmNodeIds, final long flags, final long wayOsmId )
     {
         PointList pointList = new PointList(osmNodeIds.size(), nodeAccess.is3D());
         List<EdgeIteratorState> newEdges = new ArrayList<EdgeIteratorState>(5);
@@ -810,7 +820,7 @@ public class OSMReader implements DataReader
         }
         if (towerNodeDistance < 0.0001)
         {
-            // As investigation shows often two paths should have crossed via one identical point 
+            // As investigation shows often two paths should have crossed via one identical point
             // but end up in two very close points.
             zeroCounter++;
             towerNodeDistance = 0.0001;
@@ -825,7 +835,7 @@ public class OSMReader implements DataReader
 
         if (Double.isInfinite(towerNodeDistance) || towerNodeDistance > maxDistance)
         {
-            // Too large is very rare and often the wrong tagging. See #435 
+            // Too large is very rare and often the wrong tagging. See #435
             // so we can avoid the complexity of splitting the way for now (new towernodes would be required, splitting up geometry etc)
             LOGGER.warn("Bug in OSM or GraphHopper. Too big tower node distance " + towerNodeDistance + " reset to large value, osm way " + wayOsmId);
             towerNodeDistance = maxDistance;
@@ -891,6 +901,7 @@ public class OSMReader implements DataReader
         osmWayIdToRouteWeightMap = null;
         osmWayIdSet = null;
         edgeIdToOsmWayIdMap = null;
+        internalNodeToOsmNodeIdMap = null;
     }
 
     /**
@@ -1064,4 +1075,13 @@ public class OSMReader implements DataReader
     {
         return getClass().getSimpleName();
     }
+
+    protected Map<Integer, Long> getInternalNodeToOsrmNodeIdMap() {
+        return internalNodeToOsmNodeIdMap;
+    }
+
+    public Map<Long, Integer> getOsmWayIdToInternalIdMap() {
+        return osmWayIdToInternalIdMap;
+    }
+
 }

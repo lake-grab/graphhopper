@@ -1,14 +1,14 @@
 /*
  *  Licensed to GraphHopper GmbH under one or more contributor
- *  license agreements. See the NOTICE file distributed with this work for 
+ *  license agreements. See the NOTICE file distributed with this work for
  *  additional information regarding copyright ownership.
- * 
- *  GraphHopper GmbH licenses this file to you under the Apache License, 
- *  Version 2.0 (the "License"); you may not use this file except in 
+ *
+ *  GraphHopper GmbH licenses this file to you under the Apache License,
+ *  Version 2.0 (the "License"); you may not use this file except in
  *  compliance with the License. You may obtain a copy of the License at
- * 
+ *
  *       http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  *  Unless required by applicable law or agreed to in writing, software
  *  distributed under the License is distributed on an "AS IS" BASIS,
  *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -143,6 +143,7 @@ public class QueryGraph implements Graph
         // calculate snapped point and swap direction of closest edge if necessary
         for (QueryResult res : resList)
         {
+            res.setOsrmTrafficNode(res.getClosestNode());
             // Do not create virtual node for a query result if it is directly on a tower node or not found
             if (res.getSnappedPosition() == QueryResult.Position.TOWER)
                 continue;
@@ -153,7 +154,7 @@ public class QueryGraph implements Graph
 
             int base = closestEdge.getBaseNode();
 
-            // Force the identical direction for all closest edges. 
+            // Force the identical direction for all closest edges.
             // It is important to sort multiple results for the same edge by its wayIndex
             boolean doReverse = base > closestEdge.getAdjNode();
             if (base == closestEdge.getAdjNode())
@@ -170,7 +171,7 @@ public class QueryGraph implements Graph
                 PointList fullPL = closestEdge.fetchWayGeometry(3);
                 res.setClosestEdge(closestEdge);
                 if (res.getSnappedPosition() == QueryResult.Position.PILLAR)
-                    // ON pillar node                
+                    // ON pillar node
                     res.setWayIndex(fullPL.getSize() - res.getWayIndex() - 1);
                 else
                     // for case "OFF pillar node"
@@ -240,7 +241,7 @@ public class QueryGraph implements Graph
                 boolean addedEdges = false;
 
                 // Create base and adjacent PointLists for all none-equal virtual nodes.
-                // We do so via inserting them at the correct position of fullPL and cutting the                
+                // We do so via inserting them at the correct position of fullPL and cutting the
                 // fullPL into the right pieces.
                 for (int counter = 0; counter < results.size(); counter++)
                 {
@@ -295,9 +296,9 @@ public class QueryGraph implements Graph
     @Override
     public Graph getBaseGraph()
     {
-        // Note: if the mainGraph of this QueryGraph is a CHGraph then ignoring the shortcuts will produce a 
+        // Note: if the mainGraph of this QueryGraph is a CHGraph then ignoring the shortcuts will produce a
         // huge gap of edgeIds between base and virtual edge ids. The only solution would be to move virtual edges
-        // directly after normal edge ids which is ugly as we limit virtual edges to N edges and waste memory or make everything more complex.        
+        // directly after normal edge ids which is ugly as we limit virtual edges to N edges and waste memory or make everything more complex.
         return baseGraph;
     }
 
@@ -671,7 +672,7 @@ public class QueryGraph implements Graph
         final EdgeExplorer mainExplorer = mainGraph.createEdgeExplorer(edgeFilter);
         final TIntHashSet towerNodesToChange = new TIntHashSet(queryResults.size());
 
-        // 1. virtualEdges should also get fresh EdgeIterators on every createEdgeExplorer call!        
+        // 1. virtualEdges should also get fresh EdgeIterators on every createEdgeExplorer call!
         for (int i = 0; i < queryResults.size(); i++)
         {
             // create outgoing edges
@@ -686,7 +687,7 @@ public class QueryGraph implements Graph
             int virtNode = mainNodes + i;
             node2EdgeMap.put(virtNode, virtEdgeIter);
 
-            // replace edge list of neighboring tower nodes: 
+            // replace edge list of neighboring tower nodes:
             // add virtual edges only and collect tower nodes where real edges will be added in step 2.
             //
             // base node
