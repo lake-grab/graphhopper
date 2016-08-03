@@ -125,7 +125,7 @@ public class OSMReader implements DataReader
     private Map<Integer, Long> internalNodeToOsmNodeIdMap = new HashMap<>();
     private Map<Long,Integer> osmWayIdToInternalIdMap = new ConcurrentHashMap<>();
     private AtomicInteger nexInternalWayId = new AtomicInteger(0);
-
+    private Map<Long,ReaderNode> nodeInfoMap = new HashMap<>();
 
     public OSMReader( GraphHopperStorage ghStorage )
     {
@@ -153,7 +153,6 @@ public class OSMReader implements DataReader
 
         StopWatch sw1 = new StopWatch().start();
         preProcess(osmFile);
-        System.out.println("------------------osmWayIdToInternalIdMap size:" + osmWayIdToInternalIdMap.size() +"------------------");
         sw1.stop();
 
         StopWatch sw2 = new StopWatch().start();
@@ -614,6 +613,7 @@ public class OSMReader implements DataReader
 
     boolean addNode( ReaderNode node )
     {
+        nodeInfoMap.put(node.getId(),node);
         int nodeType = getNodeMap().get(node.getId());
         if (nodeType == EMPTY)
             return false;
@@ -1084,4 +1084,7 @@ public class OSMReader implements DataReader
         return osmWayIdToInternalIdMap;
     }
 
+    public Map<Long, ReaderNode> getNodeInfoMap() {
+        return nodeInfoMap;
+    }
 }
